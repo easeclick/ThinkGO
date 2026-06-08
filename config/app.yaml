@@ -1,0 +1,29 @@
+app:
+  name: "ERP System"
+  version: "1.0.0"
+  log_level: "debug"
+  debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8888
+
+database:
+  driver: "sqlite"
+  dsn: "erp.db"
+  auto_migrate: true
+
+cache:
+  driver: "memory"
+  prefix: "erp:"
+
+# Shopee API credentials
+shopee:
+  partner_id: 0
+  partner_key: ""
+  shop_id: 0
+
+# 1688 API credentials
+alibaba:
+  app_key: ""
+  app_secret: ""
