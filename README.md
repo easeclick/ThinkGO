@@ -1,21 +1,17 @@
 # ThinkGo
 
-**ThinkPHP-inspired Go web framework** — for building structured, production-ready APIs with a familiar MVC pattern.
-
-```
-go get github.com/user/thinkgo
-```
+**ThinkPHP 风格的 Go Web 框架** — 用于构建结构清晰、生产就绪的 API 服务，采用熟悉的 MVC 模式。
 
 ---
 
-## Quick Start
+## 快速开始
 
 ```go
 package main
 
 import (
     "log"
-    "github.com/user/thinkgo/internal/framework"
+    "github.com/easeclick/ThinkGO/internal/framework"
 )
 
 func main() {
@@ -37,11 +33,11 @@ func main() {
 
 ---
 
-## Architecture
+## 架构
 
-### App (IoC Container)
+### App（IoC 容器）
 
-`App` is the application kernel — config, logger, database, router, and service container.
+`App` 是应用内核 — 统一管理配置、日志、数据库、路由和服务容器。
 
 ```go
 app := thinkgo.NewApp()
@@ -50,26 +46,26 @@ app.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 app.SetDB(db)
 app.SetRouter(router)
 
-// IoC container
+// IoC 容器
 app.Bind("mailer", func() any { return NewMailer() })
 mailer := app.Make("mailer").(*Mailer)
 
 app.Singleton("cache", func() any { return thinkgo.NewMemoryCache() })
-app.Run(":8888") // blocks until SIGINT/SIGTERM
+app.Run(":8888") // 阻塞等待 SIGINT/SIGTERM
 ```
 
-`Run()` binds the listener synchronously (fails fast on port conflict) and manages graceful shutdown + DB teardown.
+`Run()` 使用 `net.Listen` 同步绑定端口（端口冲突立即报错），内置优雅关闭 + 数据库清理。
 
-### Router
+### Router（路由器）
 
-| Method | Description |
+| 方法 | 说明 |
 |---|---|
-| `Get`, `Post`, `Put`, `Delete`, `Patch`, `Options` | Register route by method |
-| `Any` | Matches all HTTP methods |
-| `Group("/prefix", mws...)` | Route group with shared prefix + middleware |
-| `Resource("/users", handler)` | RESTful resource (Index/Store/Show/Update/Delete) |
+| `Get` / `Post` / `Put` / `Delete` / `Patch` / `Options` | 按方法注册路由 |
+| `Any` | 匹配所有 HTTP 方法 |
+| `Group("/prefix", mws...)` | 路由分组，共享前缀 + 中间件 |
+| `Resource("/users", handler)` | RESTful 资源路由（Index/Store/Show/Update/Delete） |
 
-**Route groups nest to any depth:**
+**路由组支持任意深度嵌套：**
 
 ```go
 api := r.Group("/api")
@@ -78,25 +74,25 @@ admin := v1.Group("/admin")
 admin.Get("/users/:id", handler) // → GET /api/v1/admin/users/42
 ```
 
-**Method Not Allowed (405):** if the path matches but the method doesn't, the router returns `405` with an `Allow` header listing valid methods.
+**405 Method Not Allowed：** 路径匹配但方法不对时，返回 `405`，附带 `Allow` 头列出允许的方法。
 
-**Not Found (404):** unmatched paths return `404` with the requested path.
+**404 Not Found：** 未匹配的路径返回 `404`，包含请求路径。
 
-**Path parameters** use `:name` syntax:
+**路径参数** 使用 `:name` 语法：
 
 ```go
 r.Get("/users/:id/posts/:postId", func(c *thinkgo.Context) error {
     id := c.Param("id")
     postId := c.Param("postId")
-    ...
+    // ...
 })
 ```
 
-### Context
+### Context（上下文）
 
-`Context` wraps `http.ResponseWriter` and `*http.Request` for the duration of a request.
+`Context` 包装 `http.ResponseWriter` 和 `*http.Request`，贯穿请求生命周期。
 
-**Per-request key-value store** (replaces `context.WithValue` abuse):
+**请求级键值存储**（替代 `context.WithValue` 滥用）：
 
 ```go
 c.Set("user_id", 42)
@@ -104,36 +100,36 @@ uid := c.Get("user_id").(int)
 c.Has("user_id") // → true
 ```
 
-**HTTP method helpers:**
+**HTTP 方法判断：**
 
 ```go
 c.IsGet()     c.IsPost()     c.IsPut()
 c.IsDelete()  c.IsPatch()    c.IsOptions()
-c.IsAjax()    // checks X-Requested-With: XMLHttpRequest
-c.Abort()     c.IsAborted()  // middleware chain control
+c.IsAjax()    // 检查 X-Requested-With: XMLHttpRequest
+c.Abort()     c.IsAborted()  // 中间件链控制
 ```
 
-**Input reading:**
+**输入读取：**
 
 ```go
-c.Param("id")          // URL path parameter
-c.Query("page")        // query string (?page=1)
+c.Param("id")          // URL 路径参数
+c.Query("page")        // 查询字符串 (?page=1)
 c.DefaultQuery("sort", "desc")
-c.QueryInt("limit")    // → int (0 on missing/invalid)
+c.QueryInt("limit")    // → int（没有或无效返回 0）
 c.QuerySlice("ids")    // → []string (?ids=1&ids=2)
-c.Form("email")        // form body
-c.FormSlice("tags")    // multiple form values
+c.Form("email")        // 表单字段
+c.FormSlice("tags")    // 多个表单值
 c.Header("Content-Type")
-c.BindJSON(&req)       // decode JSON body into struct
-c.RemoteIP()           // respects X-Forwarded-For, X-Real-IP
+c.BindJSON(&req)       // JSON 解码到结构体
+c.RemoteIP()           // 支持 X-Forwarded-For, X-Real-IP
 c.UserAgent()
 c.ContentType()
 ```
 
-**Response helpers:**
+**输出响应：**
 
 ```go
-c.JSON(data)            // JSON with current status
+c.JSON(data)            // JSON，使用当前状态码
 c.Success("ok", data)   // {"code":1, "msg":"ok", "data":...}
 c.Error("bad request")  // {"code":0, "msg":"bad request"} + 400
 c.Text("plain")
@@ -141,50 +137,50 @@ c.HTML("<h1>hello</h1>")
 c.Redirect("/login")
 ```
 
-### Response
+### Response（响应对象）
 
-Direct `Response` object for when you need explicit control:
+需要精细控制时直接使用 `Response`：
 
 ```go
 resp := thinkgo.NewResponse(ctx)
 resp.CodeJSON(http.StatusCreated, data)
 resp.JSONP("callback", data)
 resp.NoContent()       // 204
-resp.Fail("denied")    // alias for Error
-resp.XML(data)         // placeholder
+resp.Fail("denied")    // Error 的别名
+resp.XML(data)         // 占位
 ```
 
 ---
 
-## Middleware
+## 中间件
 
-**Built-in middleware:**
+**内置中间件：**
 
 ```go
-r.Use(thinkgo.Recovery())          // panic → 500 JSON + stack trace
-r.Use(thinkgo.LoggerMW())          // log method, path, remote, duration
-r.Use(thinkgo.CORSMiddleware())    // allow all origins (dev)
-r.Use(thinkgo.WithCORS(origin, methods, headers))  // custom CORS
-r.Use(thinkgo.RequestID())         // X-Request-Id (pass-through or generated)
-r.Use(thinkgo.Timeout(30*time.Second))  // context deadline → 504
-r.Use(thinkgo.BasicAuth("admin", "secret"))  // HTTP Basic Auth
+r.Use(thinkgo.Recovery())          // 捕获 panic → 500 JSON + 堆栈
+r.Use(thinkgo.LoggerMW())          // 记录方法、路径、客户端、耗时
+r.Use(thinkgo.CORSMiddleware())    // 允许所有来源（开发用）
+r.Use(thinkgo.WithCORS(origin, methods, headers))  // 自定义 CORS
+r.Use(thinkgo.RequestID())         // X-Request-Id（透传或自动生成）
+r.Use(thinkgo.Timeout(30*time.Second))  // context 超时 → 504
+r.Use(thinkgo.BasicAuth("admin", "secret"))  // HTTP Basic 认证
 ```
 
-**Per-route middleware:**
+**路由级中间件：**
 
 ```go
 r.Get("/admin", handler, thinkgo.BasicAuth("admin", "secret"))
 ```
 
-**Custom middleware:**
+**自定义中间件：**
 
 ```go
 func MyMiddleware() thinkgo.Middleware {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            // before
+            // 前置处理
             next.ServeHTTP(w, r)
-            // after
+            // 后置处理
         })
     }
 }
@@ -192,9 +188,89 @@ func MyMiddleware() thinkgo.Middleware {
 
 ---
 
-## Validation
+## 插件系统
 
-Struct tag validation (ThinkPHP-style rules):
+插件是 ThinkGo 的一等公民 — 每个插件可独立注册路由、启动和关闭，支持 `init()` 自动注册（类似 `database/sql` 驱动模式）。
+
+### 插件接口
+
+```go
+type Plugin interface {
+    ID() string             // 唯一标识
+    Version() string        // 版本号
+    Description() string    // 描述
+    Routes() []RouteInfo    // 路由列表（用于 AI 发现）
+    RegisterRoutes(r *thinkgo.Router)
+    Boot(app *thinkgo.App) error
+    Shutdown() error
+}
+```
+
+嵌入 `BasePlugin` 获得空实现，只需覆写需要的方法：
+
+```go
+type MyPlugin struct{ plugin.BasePlugin }
+func (p *MyPlugin) ID() string          { return "myplugin" }
+func (p *MyPlugin) RegisterRoutes(r *thinkgo.Router) {
+    r.Get("/myplugin/hello", handler)
+}
+```
+
+### 生命周期
+
+```
+Register() → RegisterRoutes() → Boot() → ... → Shutdown()
+```
+
+### 全局注册表（init 自动注册）
+
+```go
+func init() {
+    plugin.Register(&MyPlugin{})
+}
+```
+
+```go
+import _ "path/to/myplugin" // blank import 触发 init()
+```
+
+### PluginManager
+
+```go
+pm := plugin.NewManager(app, router)
+// 从全局注册表加载
+for _, p := range plugin.Registered() {
+    pm.Register(p)
+}
+pm.Boot() // 调用所有插件的 RegisterRoutes → Boot
+// ...
+pm.Shutdown() // 优雅关闭，按注册逆序
+```
+
+### AI 发现端点
+
+插件管理器自动注册以下端点，供 AI 客户端和 API 网关发现：
+
+| 端点 | 说明 |
+|------|------|
+| `GET /-/plugins` | 返回所有已注册插件的元数据和路由列表 |
+| `GET /-/api.json` | 返回完整 API 规范（框架+插件+路由） |
+
+### 内置插件
+
+| 插件 | ID | 说明 |
+|------|----|------|
+| Shopee | `shopee` | Shopee OpenAPI v2 集成 — 商品、订单、图片上传 |
+| 1688（阿里巴巴） | `alibaba` | 1688 OpenAPI 集成 — 商品搜索、代发 |
+| ERP Core | `erpcore` | ERP 核心业务 — 商品、订单、采购、利润报表 |
+
+所有插件在未配置 API 密钥时自动降级为 Mock 模式，返回示例数据。
+
+---
+
+## 参数验证
+
+结构体标签验证（ThinkPHP 风格规则）：
 
 ```go
 type LoginRequest struct {
@@ -205,31 +281,31 @@ type LoginRequest struct {
 
 v := thinkgo.NewValidator()
 if !v.ValidateStruct(req) {
-    fmt.Println(v.Errors())  // map[field]error_message
+    fmt.Println(v.Errors())  // map[字段名]错误信息
 }
 ```
 
-**Supported rules:**
+**支持的规则：**
 
-| Rule | Example | Description |
+| 规则 | 示例 | 说明 |
 |---|---|---|
-| `required` | `required` | Non-empty |
-| `minLen:N` | `minLen:3` | Minimum length |
-| `maxLen:N` | `maxLen:20` | Maximum length |
-| `len:N` | `len:11` | Exact length |
-| `min:N` | `min:0` | Minimum numeric value |
-| `max:N` | `max:100` | Maximum numeric value |
-| `email` | `email` | Email format |
-| `numeric` | `numeric` | Digits with optional decimal |
-| `integer` | `integer` | Digits only |
-| `alpha` | `alpha` | Letters only |
-| `alphaNum` | `alphaNum` | Letters and digits |
-| `phone` | `phone` | Chinese phone (1[3-9]XXXXXXXXX) |
+| `required` | `required` | 非空 |
+| `minLen:N` | `minLen:3` | 最小长度 |
+| `maxLen:N` | `maxLen:20` | 最大长度 |
+| `len:N` | `len:11` | 固定长度 |
+| `min:N` | `min:0` | 最小值 |
+| `max:N` | `max:100` | 最大值 |
+| `email` | `email` | 邮箱格式 |
+| `numeric` | `numeric` | 数字（含小数） |
+| `integer` | `integer` | 整数 |
+| `alpha` | `alpha` | 纯字母 |
+| `alphaNum` | `alphaNum` | 字母和数字 |
+| `phone` | `phone` | 手机号（1[3-9]XXXXXXXXX） |
 | `url` | `url` | http/https URL |
-| `in:a,b,c` | `in:get,post` | Must be one of |
-| `regex:pattern` | `regex:^[A-Z]+$` | Custom regex |
+| `in:a,b,c` | `in:get,post` | 枚举值 |
+| `regex:pattern` | `regex:^[A-Z]+$` | 自定义正则 |
 
-**Explicit rule map:**
+**显式规则映射：**
 
 ```go
 rules := map[string]string{
@@ -240,17 +316,17 @@ v.ValidateRules(data, rules)
 
 ---
 
-## Database & Models
+## 数据库与模型
 
-GORM integration:
+GORM 集成：
 
 ```go
 import "gorm.io/gorm"
 
-var db *gorm.DB // initialized during app bootstrap
+var db *gorm.DB // 应用启动时初始化
 thinkgo.DB = db
 
-// Model embedding (with timestamps + soft delete)
+// 嵌入模型（自带时间戳 + 软删除）
 type User struct {
     thinkgo.Model
     Name  string `gorm:"size:100"`
@@ -264,7 +340,7 @@ thinkgo.DB.Create(&user)
 thinkgo.DB.First(&user, id)
 thinkgo.DB.Model(&user).Update("name", "Alice")
 
-// Chainable ModelOps (ThinkPHP-style)
+// 链式查询（ThinkPHP 风格）
 var users []User
 thinkgo.UseModel(&User{}).
     Where("age > ?", 18).
@@ -272,27 +348,27 @@ thinkgo.UseModel(&User{}).
     Limit(10).
     Find(&users)
 
-// Pagination
+// 分页查询
 total, err := thinkgo.UseModel(&User{}).
     Where("status = ?", "active").
     Paginate(page, 20, &users)
 ```
 
-**Multiple connections:**
+**多数据库连接：**
 
 ```go
 mgr := thinkgo.NewDBManager()
 mgr.Register("default", db1)
 mgr.Register("reporting", db2)
-mgr.Get()          // default
+mgr.Get()          // 默认连接
 mgr.Get("reporting")
 ```
 
 ---
 
-## Configuration
+## 配置管理
 
-YAML-based with dot-notation access:
+YAML 配置文件，点号语法访问：
 
 ```yaml
 # config/app.yaml
@@ -316,9 +392,9 @@ cfg.Set("app.debug", true)
 
 ---
 
-## Caching
+## 缓存
 
-**In-memory cache** (default):
+**内存缓存（默认）：**
 
 ```go
 cache := thinkgo.NewMemoryCache()
@@ -328,7 +404,7 @@ cache.Delete("key")
 cache.Clear()
 ```
 
-**File cache:**
+**文件缓存：**
 
 ```go
 cache := thinkgo.NewFileCache("/tmp/cache")
@@ -337,26 +413,26 @@ cache.Set("key", data, time.Hour)
 
 ---
 
-## Events
+## 事件系统
 
-ThinkPHP-style pub/sub:
+ThinkPHP 风格发布订阅：
 
 ```go
-// Define handler
+// 定义监听器
 type UserRegistered struct{}
 func (UserRegistered) Handle(args ...any) error {
-    fmt.Println("user registered:", args[0])
+    fmt.Println("用户注册:", args[0])
     return nil
 }
 
-// Register
+// 注册
 events := thinkgo.NewEventSystem()
 events.Listen("user.registered", UserRegistered{})
 
-// Fire
+// 触发
 events.Trigger("user.registered", user)
 
-// Or use plain functions
+// 也支持普通函数
 events.Listen("order.created", func(orderID int) error {
     return sendEmail(orderID)
 })
@@ -364,20 +440,20 @@ events.Listen("order.created", func(orderID int) error {
 
 ---
 
-## Template Rendering
+## 模板渲染
 
 ```go
-// Init
+// 初始化
 view := thinkgo.NewViewEngine("view/")
 view.SetExtension(".html")
 view.AddFunc("uppercase", strings.ToUpper)
 
-// In handler
+// 控制器中使用
 html, err := view.Render("index", data)
 ctx.HTML(html)
 ```
 
-Dev mode (reload on every request):
+开发模式（每次请求重新加载模板）：
 
 ```go
 view.SetCached(false)
@@ -385,15 +461,15 @@ view.SetCached(false)
 
 ---
 
-## Logging
+## 日志
 
 ```go
 logger := thinkgo.NewLogger("debug")
-logger.Info("server started", "port", 8888)
-logger.With("request_id", "abc").Error("db failed", "err", err)
+logger.Info("服务已启动", "port", 8888)
+logger.With("request_id", "abc").Error("数据库错误", "err", err)
 ```
 
-Or use `slog` directly (the framework uses `slog` internally):
+或直接使用 `slog`（框架内部使用 `slog`）：
 
 ```go
 app.SetLogger(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -401,31 +477,31 @@ app.SetLogger(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 ---
 
-## Helpers
+## 辅助函数
 
 ```go
-thinkgo.StructToMap(user)   // struct → map[string]any (supports json tags, nesting)
-thinkgo.MD5("hello")        // hex MD5 hash
-thinkgo.Token(16)           // crypto/rand hex token (32 chars)
-thinkgo.Now("Y-m-d H:i:s")  // current time (ThinkPHP format)
-thinkgo.InArray("x", []string{"x","y"})  // slice contains
-thinkgo.ArrayColumn(items, "name")       // extract column from map slice
-thinkgo.Default(val, fallback)            // ?? operator
-thinkgo.DD(val)                          // dump + die
-thinkgo.Dump(val)                        // dump
+thinkgo.StructToMap(user)   // 结构体 → map[string]any（支持 json 标签、嵌套）
+thinkgo.MD5("hello")        // MD5 哈希
+thinkgo.Token(16)           // 随机 Token（32 位十六进制）
+thinkgo.Now("Y-m-d H:i:s")  // 当前时间（ThinkPHP 日期格式）
+thinkgo.InArray("x", []string{"x","y"})  // 判断元素是否在切片中
+thinkgo.ArrayColumn(items, "name")       // 提取 map 切片中的字段
+thinkgo.Default(val, fallback)            // 空值默认值（?? 运算符）
+thinkgo.DD(val)                          // 打印并终止
+thinkgo.Dump(val)                        // 打印
 ```
 
-**Pagination:**
+**分页辅助：**
 
 ```go
 total := int64(100)
 p := thinkgo.NewPagination(total, 1, 20)
-// p.Pages=5 p.HasPrev=false p.HasNext=true
+// p.Pages=5  p.HasPrev=false  p.HasNext=true
 ```
 
 ---
 
-## Resource Controller
+## RESTful 资源控制器
 
 ```go
 type UserController struct {
@@ -433,13 +509,13 @@ type UserController struct {
 }
 
 func (c *UserController) Index(ctx *thinkgo.Context) error {
-    return ctx.Success("users list")
+    return ctx.Success("用户列表")
 }
 
-// Register
+// 注册
 r.Resource("/users", &UserController{})
 
-// Generates:
+// 自动生成：
 // GET    /users       → Index
 // POST   /users       → Store
 // GET    /users/:id   → Show
@@ -449,33 +525,80 @@ r.Resource("/users", &UserController{})
 
 ---
 
-## Full Example
+## 完整示例
 
-See [`cmd/api/main.go`](cmd/api/main.go) and [`internal/api/server.go`](internal/api/server.go) for the complete API server setup with database, migrations, routing, and graceful shutdown.
+### API 服务（插件架构）
+
+参见 [`internal/api/server.go`](internal/api/server.go) — 使用插件管理器自动加载所有已注册插件：
 
 ```go
 func Run() {
     app := thinkgo.NewApp()
     app.Config().Load("config/app.yaml")
-    app.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
     db, _ := gorm.Open(sqlite.Open(app.Config().GetString("database.dsn")))
     thinkgo.DB = db
     app.SetDB(db)
+
+    // 自动迁移
+    model.MigrateDB(db)
 
     router := thinkgo.NewRouter()
     router.Use(thinkgo.Recovery(), thinkgo.LoggerMW(), thinkgo.CORSMiddleware())
     router.Get("/ping", func(c *thinkgo.Context) error {
         return c.JSON(thinkgo.Map{"message": "pong"})
     })
-    router.PrintRoutes()
 
+    // 插件系统 — 从全局注册表加载
+    pm := plugin.NewManager(app, router)
+    for _, p := range plugin.Registered() {
+        pm.Register(p)
+    }
+    pm.Boot() // 自动注册路由 + Boot（含 AI 发现端点）
+
+    router.PrintRoutes()
     app.SetRouter(router)
     app.Run(thinkgo.ListenAddr(
         app.Config().GetString("server.host"),
         app.Config().GetInt("server.port"),
     ))
 }
+```
+
+### ERP 业务模块
+
+项目内置了完整的 ERP 演示模块（Mock 模式，开箱即用）：
+
+| 模块 | 说明 |
+|------|------|
+| [shopee](internal/shopee/) | Shopee API 签名、商品/订单接口 |
+| [alibaba](internal/alibaba/) | 1688 API 签名、商品搜索、采购单 |
+| [erpcore](internal/erpcore/) | ERP 核心计算：利润报表、自动采购 |
+| [model](internal/model/) | GORM 数据模型 + 迁移 + 种子数据 |
+| [worker](internal/worker/) | 后台任务：订单同步、库存预警 |
+| [api](internal/api/) | API 服务入口，集成插件系统 |
+| [plugins](plugins/) | 插件实现（shopee / alibaba / erpcore） |
+
+**业务 API 路由：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/products` | 商品列表 |
+| GET | `/api/v1/products/:id` | 商品详情 |
+| GET | `/api/v1/orders` | 订单列表 |
+| GET | `/api/v1/orders/:id` | 订单详情（支持 order_id 字符串） |
+| GET | `/api/v1/purchases` | 1688 采购单列表 |
+| GET | `/api/v1/search?keyword=&page=` | 1688 商品搜索（Mock） |
+| GET | `/api/v1/report/daily?date=2026-01-01` | 每日利润报表 |
+| GET | `/api/v1/report/monthly?year=&month=` | 月度利润报表（含畅销/滞销分析） |
+
+**启动方式：**
+
+```bash
+go run main.go migrate   # 初始化数据表
+go run main.go seed      # 填充 Mock 数据（50 订单 + 5 商品 + 20 采购单）
+go run main.go api       # 启动 API 服务（默认 :8888）
+go run main.go worker    # 启动后台 Worker（自动同步/补货）
 ```
 
 ---

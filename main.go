@@ -5,10 +5,16 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/user/thinkgo/internal/api"
-	"github.com/user/thinkgo/internal/framework"
-	"github.com/user/thinkgo/internal/model"
-	"github.com/user/thinkgo/internal/worker"
+	"github.com/easeclick/ThinkGO/internal/api"
+	"github.com/easeclick/ThinkGO/internal/framework"
+	"github.com/easeclick/ThinkGO/internal/model"
+	"github.com/easeclick/ThinkGO/internal/worker"
+
+	// Auto-register plugins via init()
+	_ "github.com/easeclick/ThinkGO/plugins/alibaba"
+	_ "github.com/easeclick/ThinkGO/plugins/erpcore"
+	_ "github.com/easeclick/ThinkGO/plugins/shopee"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -26,6 +32,8 @@ func main() {
 		worker.Run()
 	case "migrate":
 		runMigrate()
+	case "seed":
+		runSeed()
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -44,7 +52,33 @@ func printUsage() {
 	fmt.Println("  api          Start API server")
 	fmt.Println("  worker       Start background worker")
 	fmt.Println("  migrate      Run database migration")
+	fmt.Println("  seed         Seed database with mock data")
 	fmt.Println("  help         Show this help")
+}
+
+func runSeed() {
+	app := thinkgo.NewApp()
+	if err := app.Config().Load("config/app.yaml"); err != nil {
+		slog.Warn("config not loaded, using defaults", "error", err)
+	}
+
+	dsn := app.Config().GetString("database.dsn")
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		slog.Error("seed: database connection failed", "error", err)
+		os.Exit(1)
+	}
+
+	// Ensure tables exist first
+	if err := model.MigrateDB(db); err != nil {
+		slog.Error("seed: migration failed", "error", err)
+		os.Exit(1)
+	}
+
+	if err := model.SeedData(db); err != nil {
+		slog.Error("seed failed", "error", err)
+		os.Exit(1)
+	}
 }
 
 func runMigrate() {

@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/user/thinkgo/internal/alibaba"
+	"github.com/easeclick/ThinkGO/internal/alibaba"
 )
 
 // MappedItem represents a Shopee-ready item converted from a 1688 product.

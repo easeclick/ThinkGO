@@ -90,16 +90,23 @@ func SaveDailyProfit(db *gorm.DB, profit *DailyProfit) error {
 	type profitRecord struct {
 		Date        time.Time `gorm:"type:date"`
 		TotalProfit float64   `gorm:"type:decimal(10,2)"`
-		BestSku     string    `gorm:"size:100"`
-		WorstSku    string    `gorm:"size:100"`
+		TotalSales  float64   `gorm:"type:decimal(10,2)"`
+		TotalCost   float64   `gorm:"type:decimal(10,2)"`
+		OrderCount  int
+		BestSku     string `gorm:"size:100"`
+		WorstSku    string `gorm:"size:100"`
 	}
 
 	record := profitRecord{
 		Date:        profit.Date,
 		TotalProfit: profit.TotalProfit,
+		TotalSales:  profit.TotalSales,
+		TotalCost:   profit.TotalCost,
+		OrderCount:  profit.OrderCount,
 		BestSku:     profit.BestSku,
 		WorstSku:    profit.WorstSku,
 	}
 
-	return db.Table("profits").Save(&record).Error
+	// Use Clauses to handle upsert on duplicate date (unique index)
+	return db.Table("profits").Where("date = ?", record.Date).Assign(record).FirstOrCreate(&record).Error
 }

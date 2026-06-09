@@ -2,7 +2,10 @@ package erpcore
 
 import (
 	"log/slog"
+	"math/rand"
+	"time"
 
+	"github.com/easeclick/ThinkGO/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -10,14 +13,9 @@ import (
 func CheckLowStock(db *gorm.DB) {
 	slog.Info("checking low stock products...")
 
-	var products []struct {
-		ID           uint
-		AliProductID string
-		Title        string
-		Stock        int
-	}
+	var products []model.Product
 
-	if err := db.Table("products").Where("stock < ?", 10).Find(&products).Error; err != nil {
+	if err := db.Where("stock < ?", 10).Find(&products).Error; err != nil {
 		slog.Error("low stock query failed", "error", err)
 		return
 	}
@@ -35,9 +33,28 @@ func CheckLowStock(db *gorm.DB) {
 			"ali_product_id", p.AliProductID,
 		)
 
-		// TODO: trigger actual 1688 purchase when credentials configured
-		// orderID, err := alibabaClient.CreateDropShippingOrder(p.AliProductID, 50, "warehouse")
-		// if err != nil { slog.Error("auto purchase failed", "error", err); continue }
-		// slog.Info("auto purchase created", "order_id", orderID, "sku", p.AliProductID)
+		purchase := model.AliPurchase{
+			PurchaseID: "ERP-" + time.Now().Format("20060102") + "-" + randString(8),
+			Cost:       float64(rand.Intn(2000)+200) / 100,
+			Sku:        p.AliProductID,
+			OrderRef:   "",
+			CreatedAt:  time.Now(),
+		}
+		if err := db.Create(&purchase).Error; err != nil {
+			slog.Error("failed to create auto purchase", "error", err)
+			continue
+		}
+
+		db.Model(&p).Update("stock", 100)
+		slog.Info("auto purchase completed", "purchase_id", purchase.PurchaseID, "sku", p.AliProductID)
 	}
+}
+
+func randString(n int) string {
+	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }

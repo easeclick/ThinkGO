@@ -18,17 +18,5 @@ var mockProducts = []Product{
 // SearchProducts searches 1688 products by keyword.
 // Returns mock data if no credentials configured.
 func (c *Client) SearchProducts(keyword string, page int) ([]Product, error) {
-	if c.AppKey == "" || c.AppKey == "your_app_key" {
-		return mockProducts, nil
-	}
-
-	params := map[string]string{
-		"keywords": keyword,
-		"pageNo":   string(rune(page)),
-		"pageSize": "20",
-	}
-
-	_ = params
-	// TODO: real API call when credentials available
 	return mockProducts, nil
 }

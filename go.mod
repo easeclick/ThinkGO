@@ -1,4 +1,4 @@
-module github.com/user/thinkgo
+module github.com/easeclick/ThinkGO
 
 go 1.24
 

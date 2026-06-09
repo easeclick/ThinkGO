@@ -1,6 +1,6 @@
 package main
 
-import "github.com/user/thinkgo/internal/worker"
+import "github.com/easeclick/ThinkGO/internal/worker"
 
 func main() {
 	worker.Run()

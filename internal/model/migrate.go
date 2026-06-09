@@ -47,6 +47,9 @@ type Profit struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	Date        time.Time `gorm:"type:date;not null;uniqueIndex" json:"date"`
 	TotalProfit float64   `gorm:"type:decimal(10,2)" json:"total_profit"`
+	TotalSales  float64   `gorm:"type:decimal(10,2);default:0" json:"total_sales"`
+	TotalCost   float64   `gorm:"type:decimal(10,2);default:0" json:"total_cost"`
+	OrderCount  int       `gorm:"default:0" json:"order_count"`
 	BestSku     string    `gorm:"size:100" json:"best_sku"`
 	WorstSku    string    `gorm:"size:100" json:"worst_sku"`
 	CreatedAt   time.Time `json:"created_at"`
