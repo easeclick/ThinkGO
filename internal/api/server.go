@@ -1,9 +1,7 @@
 package api
 
 import (
-	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -25,6 +23,7 @@ func Run() {
 
 	app.SetLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
+	// Database connection
 	dsn := app.Config().GetString("database.dsn")
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
@@ -37,6 +36,7 @@ func Run() {
 	app.SetDB(db)
 	slog.Info("database connected", "dsn", dsn)
 
+	// Auto-migrate
 	if app.Config().GetBool("database.auto_migrate") {
 		if err := model.MigrateDB(db); err != nil {
 			slog.Error("migration failed", "error", err)
@@ -45,20 +45,23 @@ func Run() {
 		slog.Info("database migrated")
 	}
 
+	// Router setup
 	router := thinkgo.NewRouter()
 	router.Use(thinkgo.Recovery())
 	router.Use(thinkgo.LoggerMW())
 	router.Use(thinkgo.CORSMiddleware())
 
 	registerRoutes(router, db)
+	router.PrintRoutes()
 
-	addr := fmt.Sprintf("%s:%d",
+	app.SetRouter(router)
+
+	// Start server with graceful shutdown
+	addr := thinkgo.ListenAddr(
 		app.Config().GetString("server.host"),
 		app.Config().GetInt("server.port"),
 	)
-	slog.Info("API server starting", "addr", addr)
-
-	if err := http.ListenAndServe(addr, router); err != nil {
+	if err := app.Run(addr); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

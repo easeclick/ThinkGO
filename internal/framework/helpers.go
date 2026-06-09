@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -32,7 +33,8 @@ func MD5(s string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// Token generates a random token string.
+// Token generates a random hex token string.
+// The resulting length is 2 * length (hex encoding).
 func Token(length int) string {
 	b := make([]byte, length)
 	rand.Read(b)
@@ -93,13 +95,91 @@ func Default[T comparable](val, def T) T {
 	return val
 }
 
-// StructToMap converts a struct to a map using field names.
-// Uses fmt.Sprintf for values - use with simple types.
+// StructToMap converts a struct to map[string]any using field names as keys.
+// Supports:
+//   - Nested structs (flattened with dot notation)
+//   - `json` tags for custom key names
+//   - Unexported fields are skipped
+//   - Pointer fields (nil pointers become zero values)
 func StructToMap(obj any) map[string]any {
 	result := make(map[string]any)
-	// This is a simplified placeholder.
-	// In production, use reflection or json marshal/unmarshal.
+	v := reflect.ValueOf(obj)
+
+	// Unwrap pointer
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return result
+		}
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		result["value"] = obj
+		return result
+	}
+
+	structToMapRecursive(v, "", result)
 	return result
+}
+
+func structToMapRecursive(v reflect.Value, prefix string, result map[string]any) {
+	t := v.Type()
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldVal := v.Field(i)
+
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
+
+		// Determine key name: json tag > field name
+		key := field.Name
+		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+			if idx := strings.Index(jsonTag, ","); idx >= 0 {
+				key = jsonTag[:idx]
+			} else {
+				key = jsonTag
+			}
+			if key == "-" {
+				continue // explicitly skipped
+			}
+		}
+
+		if prefix != "" {
+			key = prefix + "." + key
+		}
+
+		// Unwrap pointer
+		for fieldVal.Kind() == reflect.Ptr {
+			if fieldVal.IsNil() {
+				key = "" // signal to skip
+				break
+			}
+			fieldVal = fieldVal.Elem()
+		}
+		if key == "" {
+			continue
+		}
+
+		switch fieldVal.Kind() {
+		case reflect.Struct:
+			// Check if it's a time.Time or other well-known type
+			if _, ok := fieldVal.Interface().(time.Time); ok {
+				result[key] = fieldVal.Interface()
+			} else {
+				// Recurse into nested struct
+				structToMapRecursive(fieldVal, key, result)
+			}
+		case reflect.Slice, reflect.Array:
+			result[key] = fieldVal.Interface()
+		case reflect.Map:
+			result[key] = fieldVal.Interface()
+		default:
+			result[key] = fieldVal.Interface()
+		}
+	}
 }
 
 // Pagination is a ThinkPHP-style pagination result.

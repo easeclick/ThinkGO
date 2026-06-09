@@ -2,20 +2,30 @@
 package thinkgo
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 )
 
 // App is the framework application / IoC container.
 // Manages service bindings, lifecycle, and configuration.
 type App struct {
-	mu       sync.RWMutex
-	bindings map[string]any
+	mu         sync.RWMutex
+	bindings   map[string]any
 	singletons map[string]any
-	config   *Config
-	logger   *slog.Logger
-	db       any // *gorm.DB stored via any to avoid hard dependency
+	config     *Config
+	logger     *slog.Logger
+	db         any // *gorm.DB stored via any to avoid hard dependency
+	router     *Router
+	server     *http.Server
 }
 
 // NewApp creates a new application instance.
@@ -128,8 +138,88 @@ func (a *App) GetDB() any {
 	return a.db
 }
 
-// Run starts the HTTP server.
+// SetRouter sets the HTTP router for the application.
+func (a *App) SetRouter(router *Router) {
+	a.router = router
+}
+
+// --- HTTP Server Lifecycle ---
+
+// Run starts the HTTP server with graceful shutdown.
+// This is the main entry point for the API service.
+//
+//	app := thinkgo.NewApp()
+//	app.SetRouter(router)
+//	if err := app.Run(":8888"); err != nil {
+//	    log.Fatal(err)
+//	}
+//
+// Run blocks until SIGINT/SIGTERM is received.
+// Bind errors (e.g. port in use) are returned immediately.
 func (a *App) Run(addr string) error {
-	a.Logger().Info("starting server", "addr", addr)
-	return nil // Router will be attached externally
+	if a.router == nil {
+		return errors.New("thinkgo: router not set, call SetRouter() before Run()")
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("thinkgo: listen %s: %w", addr, err)
+	}
+
+	a.server = &http.Server{
+		Handler:      a.router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	a.Logger().Info("server started", "addr", addr)
+
+	go func() {
+		if err := a.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			a.Logger().Error("server error", "error", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	return a.waitForShutdown()
+}
+
+// Shutdown gracefully stops the HTTP server.
+func (a *App) Shutdown() error {
+	if a.server == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	a.Logger().Info("server shutting down...")
+	return a.server.Shutdown(ctx)
+}
+
+// waitForShutdown blocks until SIGINT or SIGTERM is received.
+func (a *App) waitForShutdown() error {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+
+	a.Logger().Info("shutdown signal received", "signal", sig)
+
+	// Close database connections if any
+	if a.db != nil {
+		if closer, ok := a.db.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				a.Logger().Error("error closing database", "error", err)
+			}
+		}
+	}
+
+	return a.Shutdown()
+}
+
+// ListenAddr returns the configured listen address.
+// Helper for building addr string from config.
+func ListenAddr(host string, port int) string {
+	return fmt.Sprintf("%s:%d", host, port)
 }

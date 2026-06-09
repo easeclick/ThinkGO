@@ -2,22 +2,27 @@ package thinkgo
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 )
 
 // Validator provides ThinkPHP-style validation.
-// Define rules as struct tags or rule maps.
+// Supports both struct tag validation and explicit rule maps.
 //
-// Example:
+// Struct tag usage:
 //
 //	type LoginRequest struct {
 //	    Username string `validate:"required|minLen:3|maxLen:20"`
 //	    Password string `validate:"required|minLen:6"`
+//	    Email    string `validate:"required|email"`
 //	}
 //
+//	req := LoginRequest{Username: "a"}
 //	v := thinkgo.NewValidator()
-//	errs := v.Validate(LoginRequest{Username: "a"})
+//	if !v.ValidateStruct(req) {
+//	    fmt.Println(v.Errors())  // map[Password:... Username:... Email:...]
+//	}
 type Validator struct {
 	errors map[string]string
 }
@@ -39,8 +44,6 @@ type Rule struct {
 
 // ValidateRules validates a map of fields against rules.
 // This is the explicit rule-map style (like ThinkPHP).
-//
-// Example:
 //
 //	v := thinkgo.NewValidator()
 //	rules := map[string]string{
@@ -68,13 +71,74 @@ func (v *Validator) ValidateRules(data map[string]string, rules map[string]strin
 	return valid
 }
 
-// ValidateStruct validates a struct using `validate` tags.
+// ValidateStruct validates a struct using `validate` struct tags.
+// Supports nested structs (recursive validation).
+//
+// Validates all fields with `validate` tag automatically.
 func (v *Validator) ValidateStruct(obj any) bool {
 	v.errors = make(map[string]string)
+	return v.validateValue(reflect.ValueOf(obj), "")
+}
 
-	// Note: In a real implementation, use reflection to read struct tags.
-	// For now, this is a placeholder pattern.
-	return true
+// validateValue recursively validates a reflected value.
+func (v *Validator) validateValue(val reflect.Value, prefix string) bool {
+	// Unwrap pointer
+	for val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return true
+		}
+		val = val.Elem()
+	}
+
+	if val.Kind() != reflect.Struct {
+		return true
+	}
+
+	valid := true
+	t := val.Type()
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldVal := val.Field(i)
+
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
+
+		fieldName := field.Name
+		if prefix != "" {
+			fieldName = prefix + "." + field.Name
+		}
+
+		// Recurse into nested structs
+		if fieldVal.Kind() == reflect.Struct || fieldVal.Kind() == reflect.Ptr {
+			if fieldVal.Kind() == reflect.Ptr && fieldVal.IsNil() {
+				// nil pointer — still validate if there's a tag
+			} else {
+				if !v.validateValue(fieldVal, fieldName) {
+					valid = false
+				}
+			}
+		}
+
+		// Check validate tag
+		tag := field.Tag.Get("validate")
+		if tag == "" {
+			continue
+		}
+
+		ruleList := parseRules(tag)
+		strVal := fmt.Sprintf("%v", fieldVal.Interface())
+
+		for _, rule := range ruleList {
+			if !v.applyRule(fieldName, strVal, rule) {
+				valid = false
+			}
+		}
+	}
+
+	return valid
 }
 
 // Errors returns all validation errors.
@@ -108,6 +172,21 @@ func (v *Validator) applyRule(field, value string, rule Rule) bool {
 			v.errors[field] = v.msg(rule, field+" must not exceed "+rule.Param+" characters")
 			return false
 		}
+	case "len":
+		if len(value) != toInt(rule.Param) {
+			v.errors[field] = v.msg(rule, field+" must be exactly "+rule.Param+" characters")
+			return false
+		}
+	case "min":
+		if toFloat(value) < toFloat(rule.Param) {
+			v.errors[field] = v.msg(rule, field+" must be at least "+rule.Param)
+			return false
+		}
+	case "max":
+		if toFloat(value) > toFloat(rule.Param) {
+			v.errors[field] = v.msg(rule, field+" must not exceed "+rule.Param)
+			return false
+		}
 	case "email":
 		matched, _ := regexp.MatchString(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`, value)
 		if !matched {
@@ -118,6 +197,12 @@ func (v *Validator) applyRule(field, value string, rule Rule) bool {
 		matched, _ := regexp.MatchString(`^\d+(\.\d+)?$`, value)
 		if !matched {
 			v.errors[field] = v.msg(rule, field+" must be numeric")
+			return false
+		}
+	case "integer":
+		matched, _ := regexp.MatchString(`^\d+$`, value)
+		if !matched {
+			v.errors[field] = v.msg(rule, field+" must be an integer")
 			return false
 		}
 	case "alpha":
@@ -136,6 +221,31 @@ func (v *Validator) applyRule(field, value string, rule Rule) bool {
 		matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, value)
 		if !matched {
 			v.errors[field] = v.msg(rule, field+" must be a valid phone number")
+			return false
+		}
+	case "url":
+		matched, _ := regexp.MatchString(`^https?://`, value)
+		if !matched {
+			v.errors[field] = v.msg(rule, field+" must be a valid URL")
+			return false
+		}
+	case "in":
+		allowed := strings.Split(rule.Param, ",")
+		inList := false
+		for _, a := range allowed {
+			if strings.TrimSpace(a) == value {
+				inList = true
+				break
+			}
+		}
+		if !inList {
+			v.errors[field] = v.msg(rule, field+" must be one of: "+rule.Param)
+			return false
+		}
+	case "regex":
+		matched, err := regexp.MatchString(rule.Param, value)
+		if err != nil || !matched {
+			v.errors[field] = v.msg(rule, field+" format is invalid")
 			return false
 		}
 	}
@@ -173,5 +283,12 @@ func parseRules(s string) []Rule {
 func toInt(s string) int {
 	var n int
 	fmt.Sscanf(s, "%d", &n)
+	return n
+}
+
+// toFloat converts a string to float64, returning 0 on error.
+func toFloat(s string) float64 {
+	var n float64
+	fmt.Sscanf(s, "%f", &n)
 	return n
 }
